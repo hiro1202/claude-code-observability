@@ -167,7 +167,7 @@
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
         {
-          "expr": "sum by (query_source, model) (claude_code_cost_usage_USD_total)",
+          "expr": "sum by (query_source, model) (last_over_time(claude_code_cost_usage_USD_total[1h]))",
           "legendFormat": "{{query_source}} / {{model}}",
           "refId": "A",
           "instant": true
