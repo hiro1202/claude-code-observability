@@ -59,14 +59,42 @@ open http://localhost:3000
 
 ### 環境変数(Claude Code 側)
 
+**基本セット**(これだけで metrics + events が流れる):
+
 ```bash
 export CLAUDE_CODE_ENABLE_TELEMETRY=1
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+export OTEL_METRICS_EXPORTER=otlp           # 必須: metrics 送信
+export OTEL_LOGS_EXPORTER=otlp              # 必須: events/logs 送信
 export OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 export OTEL_SERVICE_NAME=claude-code
 ```
 
-ログ・プロンプト本文の OTel 送信については、現行 Claude Code の docs を確認のうえ追加。`OTEL_LOG_USER_PROMPTS` 等の env var や `settings.json` 側の設定が関わる可能性がある。
+**より深く見たい時の追加 env var**:
+
+```bash
+# プロンプト本文を Loki に記録(デフォルトは <REDACTED>)
+export OTEL_LOG_USER_PROMPTS=1
+
+# ツール入力(Bash の実コマンド、Edit のファイルパス等)を Loki に記録
+# tool_result イベントに tool_input と tool_parameters が追加される
+export OTEL_LOG_TOOL_DETAILS=1
+
+# バッチ送信を早める(default は 60秒、開発時は短くするとフィードバック早い)
+export OTEL_METRIC_EXPORT_INTERVAL=5000
+export OTEL_LOGS_EXPORT_INTERVAL=5000
+```
+
+**プライバシー注意**: `OTEL_LOG_USER_PROMPTS=1` と `OTEL_LOG_TOOL_DETAILS=1` を有効化すると、入力プロンプト本体と実行コマンド本体が Loki に平文保存される。学習用ローカル環境ならOKだが、画面共有時等は注意。
+
+**実行コマンド監査の例**(OTEL_LOG_TOOL_DETAILS=1 有効化時):
+
+| 知りたいこと | LogQL クエリ |
+|---|---|
+| Claude Code が叩いた curl | `{service_name=~"claude-code.*"} \|= "tool_result" \|= "curl"` |
+| ファイル編集の履歴 | `{service_name=~"claude-code.*"} \|= "tool_result" \|= "Edit"` |
+| 危険な rm -rf の検出 | `{service_name=~"claude-code.*"} \|= "tool_result" \|= "rm -rf"` |
+| 遅い Bash(> 1秒) | `{service_name=~"claude-code.*"} \|= "tool_result" \|= "Bash"` を絞り込んで duration_ms フィルタ |
 
 ### Grafana
 
