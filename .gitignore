@@ -16,3 +16,4 @@ docker-compose.override.yml
 
 # Claude Code per-project settings(個人環境)
 .claude/
+.gstack/
