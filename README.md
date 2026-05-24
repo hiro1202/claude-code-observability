@@ -245,4 +245,4 @@ docker compose down -v
 
 ## License
 
-MIT — see `LICENSE`.
+MIT — see [LICENSE](./LICENSE).
