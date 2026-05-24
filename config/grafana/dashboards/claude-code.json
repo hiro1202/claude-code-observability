@@ -193,7 +193,7 @@
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
         {
-          "expr": "sum by (session_id, terminal_type) (claude_code_cost_usage_USD_total)",
+          "expr": "sum by (session_id, terminal_type) (last_over_time(claude_code_cost_usage_USD_total[1h]))",
           "format": "table",
           "instant": true,
           "refId": "A"
