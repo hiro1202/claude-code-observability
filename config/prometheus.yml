@@ -1,0 +1,18 @@
+# Prometheus 2.55 — OTLP receiver は CLI フラグ (--web.enable-otlp-receiver) で有効化済み。
+# Collector から push されたメトリクスが /api/v1/otlp/v1/metrics に来る。
+#
+# scrape は collector 自身のセルフテレメトリ用のみ
+# (Claude Code のメトリクスは push 型なので scrape 不要)。
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Phase 1 では Claude Code → collector → OTLP push のみ。scrape は不要。
+# Collector self-metrics を後で見たくなったら以下の scrape_configs を有効化:
+#
+# scrape_configs:
+#   - job_name: otel-collector-self
+#     static_configs:
+#       - targets: ['otel-collector:8888']
+scrape_configs: []

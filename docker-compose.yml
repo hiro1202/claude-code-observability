@@ -1,0 +1,96 @@
+name: claude-code-observability
+
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.152.1
+    container_name: cco-otel-collector
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./config/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC (Claude Code が指すエンドポイント)
+      - "4318:4318"   # OTLP HTTP
+      - "13133:13133" # health_check extension
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_started
+      tempo:
+        condition: service_started
+
+  prometheus:
+    image: prom/prometheus:v3.11.3
+    container_name: cco-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--web.enable-otlp-receiver"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prom-data:/prometheus
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  loki:
+    image: grafana/loki:3.2.0
+    container_name: cco-loki
+    command: ["-config.file=/etc/loki/loki-config.yaml"]
+    volumes:
+      - ./config/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "3100:3100"
+    # distroless image なので wget/curl 不在。healthcheck は host から curl で確認する。
+
+  tempo:
+    image: grafana/tempo:2.6.0
+    container_name: cco-tempo
+    user: "10001:10001"
+    command: ["-config.file=/etc/tempo/tempo-config.yaml"]
+    volumes:
+      - ./config/tempo-config.yaml:/etc/tempo/tempo-config.yaml:ro
+      - tempo-data:/var/tempo
+    ports:
+      - "3200:3200"   # Tempo HTTP API (Grafana datasource が叩く)
+    # OTLP 4317 はコンテナ内部のみで collector からアクセス、host には公開しない。
+    # distroless image なので healthcheck は host から curl で確認する。
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: cco-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_FEATURE_TOGGLES_ENABLE: "traceqlEditor"
+    volumes:
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+
+volumes:
+  prom-data:
+  loki-data:
+  tempo-data:
+  grafana-data:

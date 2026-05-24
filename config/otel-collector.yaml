@@ -1,0 +1,83 @@
+# OTel Collector — single OTLP entry point, fan out to Prometheus / Loki / Tempo.
+#
+# Claude Code が OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 で接続してくる。
+# 受け取った signal を種類別に振り分ける。
+# debug exporter も並走させているので、コンテナログで生 OTLP を観察できる
+# (Step 6 の whoa はこれが見えた瞬間)。
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    send_batch_size: 1024
+    timeout: 1s
+  # resource attribute に service.name が無ければ補完(Claude Code 側で
+  # OTEL_SERVICE_NAME を設定し忘れた時のフォールバック)
+  resource:
+    attributes:
+      - key: service.name
+        value: claude-code
+        action: insert
+  # Claude Code は metrics を Delta temporality で送ってくる。
+  # Prometheus OTLP receiver は Cumulative しか受け付けないので、ここで変換する。
+  deltatocumulative:
+    max_stale: 5m
+
+exporters:
+  # Metrics → Prometheus の OTLP receiver
+  # endpoint には base path だけ書く。otlp_http は signal 別 path (/v1/metrics) を自動付与する。
+  # 最終 URL: http://prometheus:9090/api/v1/otlp/v1/metrics
+  # (0.150+ で otlphttp → otlp_http にリネーム)
+  otlp_http/prom:
+    endpoint: http://prometheus:9090/api/v1/otlp
+    tls:
+      insecure: true
+
+  # Logs → Loki の OTLP receiver
+  # 最終 URL: http://loki:3100/otlp/v1/logs
+  otlp_http/loki:
+    endpoint: http://loki:3100/otlp
+    tls:
+      insecure: true
+
+  # Traces → Tempo の OTLP gRPC receiver
+  # (0.150+ で otlp → otlp_grpc にリネーム)
+  otlp_grpc/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+
+  # 生 OTLP を collector ログに出す。Step 6 の観察で必須。
+  # 落ち着いたら verbosity を normal に下げてもよい。
+  debug:
+    verbosity: detailed
+    sampling_initial: 5
+    sampling_thereafter: 200
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [resource, deltatocumulative, batch]
+      exporters: [otlp_http/prom, debug]
+    logs:
+      receivers: [otlp]
+      processors: [resource, batch]
+      exporters: [otlp_http/loki, debug]
+    traces:
+      receivers: [otlp]
+      processors: [resource, batch]
+      exporters: [otlp_grpc/tempo, debug]
+  # 注: collector 自身のメトリクス (self-telemetry) は Phase 1 では不要。
+  # 0.150+ で schema が変更されたため、必要なら readers ベースの新 schema で書き直す。

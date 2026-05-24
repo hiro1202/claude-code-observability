@@ -1,0 +1,52 @@
+# Loki 3.2 シングルバイナリ構成、OTLP receiver 有効化。
+# Collector が http://loki:3100/otlp/v1/logs に push してくる。
+
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9095
+  log_level: info
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+storage_config:
+  tsdb_shipper:
+    active_index_directory: /loki/tsdb-index
+    cache_location: /loki/tsdb-cache
+  filesystem:
+    directory: /loki/chunks
+
+compactor:
+  working_directory: /loki/compactor
+  delete_request_store: filesystem
+
+limits_config:
+  # OTel logs では structured metadata を使うため必須
+  allow_structured_metadata: true
+  # 学習用なので緩めに
+  reject_old_samples: false
+
+analytics:
+  # phone-home を抑制(学習用、外に出さない)
+  reporting_enabled: false
